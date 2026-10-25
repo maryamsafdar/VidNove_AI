@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-graphite: #0B0D12;
+  --color-obsidian: #151820;
+  --color-obsidian-elevated: #1B1F2A;
+  --color-lime-acid: #D5FF3F;
+  --color-lime-acid-hover: #E2FF70;
+  --color-coral-sunset: #FF6B65;
+  --color-ivory-soft: #F5F3EC;
+  --color-steel-muted: #9298A6;
+  --color-border-hairline: rgba(245, 243, 236, 0.09);
+}
+
+@layer base {
+  html {
+    background-color: #0B0D12;
+    color: #F5F3EC;
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    letter-spacing: 0.008em;
+  }
+
+  body {
+    background-color: #0B0D12;
+    color: #F5F3EC;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid #D5FF3F;
+    outline-offset: 2px;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.cinema-grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(245, 243, 236, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(245, 243, 236, 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+.glass-obsidian {
+  background: rgba(21, 24, 32, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

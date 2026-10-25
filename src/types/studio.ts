@@ -1,0 +1,85 @@
+export type RoutePath =
+  | '/'
+  | '/explore'
+  | '/studio'
+  | '/text-to-video'
+  | '/image-to-video'
+  | '/how-it-works'
+  | '/faq'
+  | '/contact'
+  | '/privacy'
+  | '/terms';
+
+export type CreationMode = 'text-to-video' | 'image-to-video' | 'photo-motion';
+
+export type AspectRatioOption = '16:9' | '9:16' | '1:1' | '4:3';
+
+export type VisualStyleId =
+  | 'anamorphic'
+  | 'documentary'
+  | 'noir'
+  | 'anime'
+  | 'commercial'
+  | 'naturalistic';
+
+export type PhotoMotionPreset =
+  | 'slow-push'
+  | 'editorial-drift'
+  | 'dramatic-pull'
+  | 'horizon-pan';
+
+export interface StudioLaunchPayload {
+  mode?: CreationMode;
+  prompt?: string;
+  style?: VisualStyleId;
+  aspectRatio?: AspectRatioOption;
+  preloadSampleImage?: boolean;
+}
+
+export interface ShowcaseItem {
+  id: string;
+  title: string;
+  category:
+    | 'Landscapes'
+    | 'Futuristic Cities'
+    | 'Dreamlike Nature'
+    | 'Commercials'
+    | 'Anime Cinema'
+    | 'Portraits';
+  aspectClass: 'wide' | 'standard' | 'portrait';
+  aspectRatio: AspectRatioOption;
+  style: VisualStyleId;
+  imageSrc: string;
+  cameraNote: string;
+  lightingNote: string;
+  prompt: string;
+  romanUrduHint?: string;
+}
+
+export interface ProviderStatus {
+  available: boolean;
+  stage: string;
+  hardware: string;
+  provider: string;
+  model: string;
+  authenticatedQuota: boolean;
+}
+
+export interface GeneratedCreation {
+  id: string;
+  mode: CreationMode;
+  prompt: string;
+  videoUrl: string;
+  downloadUrl: string;
+  fileExtension: 'mp4' | 'webm';
+  width: number;
+  height: number;
+  duration: number;
+  aspectRatio: AspectRatioOption;
+  style: VisualStyleId;
+  seed?: number;
+  modelLabel: string;
+  isGenerativeAi: boolean;
+  createdAt: string;
+  elapsedSeconds: number;
+}

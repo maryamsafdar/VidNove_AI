@@ -1,0 +1,6 @@
+{
+  "name": "VidNova AI",
+  "description": "Turn your imagination into motion. Create AI videos from text prompts and images, craft cinematic prompts, and animate still photography in a zero-cost creative studio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
