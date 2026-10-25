@@ -44,13 +44,9 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-### Optional Free Environment Variable (`.env`)
+### Zero-Token Default Operation
 
-No API keys are required. Optionally, you may set a free read-only Hugging Face token (`HF_TOKEN`) in `.env` on the Express server for higher ZeroGPU queue priority without any paid billing:
-
-```bash
-cp .env.example .env
-```
+No API keys or tokens are required to run the website, homepage, Prompt Assistant, Image Upload, or Photo Motion studio. `.env.example` intentionally omits `HF_TOKEN` so Google AI Studio never prompts for a secret. If deploying your own Node/Express server, you may optionally set a free read-only `hf_...` token in your private server environment (`HF_TOKEN`) for higher ZeroGPU queue priority—never in client-side code.
 
 ---
 

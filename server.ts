@@ -45,11 +45,20 @@ let cachedStatus: {
   authenticatedQuota: boolean;
 } | null = null;
 
+function getOptionalServerHfToken(): string | null {
+  const token = process.env.HF_TOKEN?.trim();
+  // Only attach if a genuine Hugging Face access token ("hf_...") is configured server-side.
+  if (token && token.startsWith('hf_') && token.length >= 10) {
+    return token;
+  }
+  return null;
+}
+
 function getHfHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = { ...extra };
-  const token = process.env.HF_TOKEN?.trim();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+  const validToken = getOptionalServerHfToken();
+  if (validToken) {
+    headers['Authorization'] = `Bearer ${validToken}`;
   }
   return headers;
 }
@@ -192,7 +201,7 @@ ${routes
         hardware,
         provider: 'Hugging Face ZeroGPU (Free Community Tier)',
         model: 'Lightricks/LTX-Video Distilled (Open-Weight DiT)',
-        authenticatedQuota: Boolean(process.env.HF_TOKEN?.trim()),
+        authenticatedQuota: Boolean(getOptionalServerHfToken()),
       };
       res.json(cachedStatus);
     } catch {
@@ -203,7 +212,7 @@ ${routes
         hardware: 'zero-a10g',
         provider: 'Hugging Face ZeroGPU (Free Community Tier)',
         model: 'Lightricks/LTX-Video Distilled (Open-Weight DiT)',
-        authenticatedQuota: Boolean(process.env.HF_TOKEN?.trim()),
+        authenticatedQuota: Boolean(getOptionalServerHfToken()),
       });
     }
   });
