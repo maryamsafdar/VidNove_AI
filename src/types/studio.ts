@@ -56,12 +56,20 @@ export interface ShowcaseItem {
   romanUrduHint?: string;
 }
 
+export type VideoErrorCode =
+  | 'MISSING_CONFIG'
+  | 'QUOTA_EXHAUSTED'
+  | 'BACKEND_UNAVAILABLE'
+  | 'REQUEST_FAILED';
+
 export interface ProviderStatus {
   available: boolean;
   stage: string;
   hardware: string;
   provider: string;
   model: string;
+  fallbackModel?: string;
+  fallbackAvailable?: boolean;
   authenticatedQuota: boolean;
 }
 
@@ -80,6 +88,7 @@ export interface GeneratedCreation {
   seed?: number;
   modelLabel: string;
   isGenerativeAi: boolean;
+  fallbackNotice?: string;
   createdAt: string;
   elapsedSeconds: number;
 }

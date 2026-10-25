@@ -39,6 +39,7 @@ import type {
   ProviderStatus,
   RoutePath,
   StudioLaunchPayload,
+  VideoErrorCode,
   VisualStyleId,
 } from '../types/studio';
 
@@ -89,7 +90,7 @@ export function StudioPage({
   );
   const [style, setStyle] = useState<VisualStyleId>('anamorphic');
   const [aspectRatio, setAspectRatio] = useState<AspectRatioOption>('16:9');
-  const [duration, setDuration] = useState<number>(2);
+  const [duration, setDuration] = useState<number>(4);
   const [photoMotionPreset, setPhotoMotionPreset] = useState<PhotoMotionPreset>('slow-push');
   const [useCustomSeed, setUseCustomSeed] = useState<boolean>(false);
   const [customSeed, setCustomSeed] = useState<number>(42);
@@ -107,9 +108,11 @@ export function StudioPage({
   const [stageMessage, setStageMessage] = useState<string>('');
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [photoMotionProgress, setPhotoMotionProgress] = useState<number | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const [errorBanner, setErrorBanner] = useState<{
     unavailable: boolean;
+    errorCode?: VideoErrorCode;
     message: string;
     detail?: string;
     externalDemoUrl?: string;
@@ -255,6 +258,7 @@ export function StudioPage({
       if (prompt.trim().length < 4) {
         setErrorBanner({
           unavailable: false,
+          errorCode: 'REQUEST_FAILED',
           message: 'Please enter a scene description of at least 4 characters before generating.',
         });
         return;
@@ -263,6 +267,7 @@ export function StudioPage({
       if (!uploadedImage) {
         setErrorBanner({
           unavailable: false,
+          errorCode: 'MISSING_CONFIG',
           message: 'Please upload a JPG, PNG, or WebP reference image (or load the sample frame).',
         });
         return;
@@ -270,6 +275,7 @@ export function StudioPage({
       if (mode === 'image-to-video' && !hasPermissionConsent) {
         setErrorBanner({
           unavailable: false,
+          errorCode: 'MISSING_CONFIG',
           message:
             'Please confirm image upload rights and external ZeroGPU inference consent before running AI Image-to-Video.',
         });
@@ -300,7 +306,7 @@ export function StudioPage({
         const newCreation: GeneratedCreation = {
           id: `pm-${Date.now()}`,
           mode: 'photo-motion',
-          prompt: `Photo Motion (${
+          prompt: `Photo Animation (${
             PHOTO_MOTION_PRESETS.find((p) => p.id === photoMotionPreset)?.name || 'Camera Pan'
           }) — ${uploadedImage.fileName}`,
           videoUrl: motionOut.videoUrl,
@@ -311,7 +317,7 @@ export function StudioPage({
           duration: motionOut.duration,
           aspectRatio,
           style,
-          modelLabel: 'Photo Motion · Local Browser Canvas (Non-Generative)',
+          modelLabel: 'Photo Animation · Browser Canvas (Not Generative AI)',
           isGenerativeAi: false,
           createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           elapsedSeconds: totalSec,
@@ -333,6 +339,7 @@ export function StudioPage({
         if (!res.ok) {
           setErrorBanner({
             unavailable: res.unavailable,
+            errorCode: res.errorCode,
             message: res.message,
             detail: res.detail,
             externalDemoUrl: res.externalDemoUrl,
@@ -354,6 +361,7 @@ export function StudioPage({
             seed: res.seed,
             modelLabel: res.model,
             isGenerativeAi: true,
+            fallbackNotice: res.fallbackNotice,
             createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             elapsedSeconds: totalSec,
           };
@@ -381,6 +389,7 @@ export function StudioPage({
         if (!res.ok) {
           setErrorBanner({
             unavailable: res.unavailable,
+            errorCode: res.errorCode,
             message: res.message,
             detail: res.detail,
             externalDemoUrl: res.externalDemoUrl,
@@ -402,6 +411,7 @@ export function StudioPage({
             seed: res.seed,
             modelLabel: res.model,
             isGenerativeAi: true,
+            fallbackNotice: res.fallbackNotice,
             createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             elapsedSeconds: totalSec,
           };
@@ -413,6 +423,7 @@ export function StudioPage({
       if (!controller.signal.aborted) {
         setErrorBanner({
           unavailable: false,
+          errorCode: 'REQUEST_FAILED',
           message: err instanceof Error ? err.message : 'Unable to complete motion rendering.',
         });
       }
@@ -420,6 +431,46 @@ export function StudioPage({
       setIsGenerating(false);
       setPhotoMotionProgress(null);
       setStageMessage('');
+    }
+  };
+
+  const handleDownloadCreation = async (creation: GeneratedCreation) => {
+    const fileName = `vidnova-ai-${creation.id}.${creation.fileExtension}`;
+    // Local blob: URLs or same-origin /api/video/download attachment streams can trigger immediately
+    if (creation.downloadUrl.startsWith('blob:') || creation.downloadUrl.startsWith('/api/')) {
+      const a = document.createElement('a');
+      a.href = creation.downloadUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+
+    // Cross-origin Hugging Face asset URL (e.g., on static Vercel hosting): fetch as Blob for direct file save
+    setDownloadingId(creation.id);
+    try {
+      const res = await fetch(creation.videoUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objUrl), 10_000);
+    } catch {
+      const a = document.createElement('a');
+      a.href = creation.videoUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -450,8 +501,8 @@ export function StudioPage({
             Engine:{' '}
             <strong className="text-[#F5F3EC]">
               {mode === 'photo-motion'
-                ? 'Browser HTML5 Canvas (Local)'
-                : providerStatus?.model || 'Lightricks/LTX-Video Distilled'}
+                ? 'Browser Photo Animation (Local Canvas — Not Generative AI)'
+                : providerStatus?.model || 'Lightricks/LTX-Video + AnimateDiff-Lightning'}
             </strong>
           </span>
           <span aria-hidden="true">·</span>
@@ -536,7 +587,7 @@ export function StudioPage({
                 aria-selected={mode === 'photo-motion'}
                 onClick={() => {
                   setMode('photo-motion');
-                  if (duration < 3) setDuration(3);
+                  if (duration < 3) setDuration(4);
                   setErrorBanner(null);
                 }}
                 className={`py-2.5 px-2 rounded-xl min-[375px]:rounded-full text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap truncate cursor-pointer ${
@@ -550,8 +601,10 @@ export function StudioPage({
             </div>
             {mode === 'photo-motion' && (
               <p className="text-xs text-[#9298A6] pt-1">
-                <strong className="text-[#F5F3EC]">Photo Motion (Non-Generative):</strong>{' '}
-                Animates your still photo with smooth pan/zoom optics locally in your browser—zero GPU queue wait and zero external upload.
+                <strong className="text-[#F5F3EC]">
+                  Photo Motion (Photo Animation — Not Generative AI):
+                </strong>{' '}
+                Animates your still photo with smooth 30 FPS pan/zoom camera optics locally in your browser—zero GPU queue wait, zero paid APIs, and zero external upload.
               </p>
             )}
           </div>
@@ -910,7 +963,7 @@ export function StudioPage({
                 <Play className="w-4 h-4 fill-current shrink-0" />
                 <span>
                   {mode === 'photo-motion'
-                    ? 'Render Photo Motion Clip'
+                    ? 'Animate Photo Locally (Not Generative AI)'
                     : mode === 'image-to-video'
                     ? 'Generate AI Image-to-Video'
                     : 'Generate AI Text-to-Video'}
@@ -929,8 +982,8 @@ export function StudioPage({
 
             <p className="text-[11px] text-[#9298A6] leading-relaxed text-center">
               {mode === 'photo-motion'
-                ? '100% free local browser animation · Zero external servers or GPU quotas.'
-                : 'Rs. 0 Free Community Quota · Powered by Lightricks LTX-Video Distilled on Hugging Face ZeroGPU (~12–35s per clip when queue is available).'}
+                ? '100% free local browser photo animation (not generative AI) · Zero external servers or GPU quotas.'
+                : 'Rs. 0 Free Community Quota · Powered by Lightricks LTX-Video Distilled + ByteDance AnimateDiff-Lightning on Hugging Face GPU.'}
             </p>
           </div>
         </div>
@@ -960,6 +1013,17 @@ export function StudioPage({
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-[#FF6B65] shrink-0 mt-0.5" />
                 <div className="space-y-1.5 flex-1">
+                  {errorBanner.errorCode && (
+                    <p className="text-[11px] font-mono font-semibold uppercase tracking-wider text-[#FF6B65]">
+                      {errorBanner.errorCode === 'MISSING_CONFIG'
+                        ? 'Missing Input / Consent'
+                        : errorBanner.errorCode === 'QUOTA_EXHAUSTED'
+                        ? 'Free GPU Quota Exhausted'
+                        : errorBanner.errorCode === 'BACKEND_UNAVAILABLE'
+                        ? 'Free GPU Backend Unavailable'
+                        : 'Generation Request Failed'}
+                    </p>
+                  )}
                   <p className="text-sm font-semibold text-[#F5F3EC]">
                     {errorBanner.message}
                   </p>
@@ -990,12 +1054,12 @@ export function StudioPage({
                       type="button"
                       onClick={() => {
                         setMode('photo-motion');
-                        setDuration(3);
+                        setDuration(4);
                         setErrorBanner(null);
                       }}
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#D5FF3F] text-[#0B0D12] text-xs font-semibold hover:bg-[#E2FF70] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                     >
-                      <span>Switch to Instant Browser Photo Motion</span>
+                      <span>Switch to 4s Browser Photo Animation (Non-AI)</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -1125,18 +1189,26 @@ export function StudioPage({
                   <p className="text-xs sm:text-sm text-[#F5F3EC] line-clamp-2">
                     {activeCreation.prompt}
                   </p>
+                  {activeCreation.fallbackNotice && (
+                    <p className="text-[11px] text-[#9298A6] leading-relaxed pt-0.5">
+                      {activeCreation.fallbackNotice}
+                    </p>
+                  )}
                 </div>
 
-                <a
-                  href={activeCreation.downloadUrl}
-                  download={`vidnova-ai-${activeCreation.id}.${activeCreation.fileExtension}`}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#D5FF3F] text-[#0B0D12] text-xs sm:text-sm font-semibold hover:bg-[#E2FF70] transition-colors whitespace-nowrap shrink-0"
+                <button
+                  type="button"
+                  disabled={downloadingId === activeCreation.id}
+                  onClick={() => handleDownloadCreation(activeCreation)}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#D5FF3F] text-[#0B0D12] text-xs sm:text-sm font-semibold hover:bg-[#E2FF70] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <Download className="w-4 h-4 shrink-0" />
                   <span>
-                    Download {activeCreation.fileExtension.toUpperCase()}
+                    {downloadingId === activeCreation.id
+                      ? 'Saving...'
+                      : `Download ${activeCreation.fileExtension.toUpperCase()}`}
                   </span>
-                </a>
+                </button>
               </div>
             )}
           </div>
@@ -1169,7 +1241,7 @@ export function StudioPage({
                     >
                       <div className="flex items-center justify-between text-[11px] text-[#9298A6] mb-1">
                         <span>
-                          {item.isGenerativeAi ? 'ZeroGPU AI' : 'Photo Motion'}
+                          {item.isGenerativeAi ? 'Generative AI' : 'Photo Animation (Non-AI)'}
                         </span>
                         <span className="font-mono tabular-nums">
                           {item.createdAt} · {item.elapsedSeconds}s

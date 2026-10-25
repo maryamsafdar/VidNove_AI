@@ -50,10 +50,13 @@ No API keys or tokens are required to run the website, homepage, Prompt Assistan
 
 ---
 
-## Deploying to GitHub (`vidnova-ai`) & Vercel Free Hobby Plan
+## Syncing to GitHub (`maryamsafdar/VidNove_AI`) & Vercel Hobby Deployment
 
-1. **Export to GitHub**:
-   - Click **Export to GitHub** in the Google AI Studio toolbar and create the new repository **`vidnova-ai`** (this creates a fresh repository and leaves `maryamsafdar/qrnova` untouched).
-2. **Deploy to Vercel (Rs. 0 Hobby Tier)**:
-   - Import the `vidnova-ai` GitHub repository at [vercel.com/new](https://vercel.com/new) on the free **Hobby** plan.
-   - `vercel.json` automatically configures `npm run build`, serves `dist/`, and rewrites all SPA routes cleanly. The client-side Studio service automatically connects directly to official Hugging Face ZeroGPU CORS endpoints when deployed statically on Vercel.
+1. **Sync Updates from Google AI Studio to GitHub**:
+   - Click the **GitHub** icon (**Sync / Export to GitHub**) in the top toolbar of Google AI Studio.
+   - Select your connected repository **`maryamsafdar/VidNove_AI`** and branch **`main`**, enter a commit message, and confirm to push all updated files (`package.json`, `package-lock.json`, `vercel.json`, `server.ts`, and `src/*`).
+2. **Verify Vercel Builds the Latest Commit (`main`)**:
+   - Pushing a new commit to `maryamsafdar/VidNove_AI` (`main`) automatically triggers a fresh Vercel production deployment.
+   - In the Vercel Dashboard (**Deployments** tab), always open the **newest** deployment at the top of the list rather than clicking **Redeploy** on an older failed deployment (such as `c6663d5`), because redeploying an old card rebuilds that historical commit snapshot.
+   - `vercel.json` configures `npm install`, `npm run build`, output directory `dist`, and clean SPA route rewrites on the free Hobby plan.
+

@@ -40,20 +40,47 @@ function loadHtmlImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-function pickSupportedRecorderMime(): { mimeType: string; ext: 'mp4' | 'webm' } {
+function createSafeMediaRecorder(stream: MediaStream): {
+  recorder: MediaRecorder;
+  mimeType: string;
+  ext: 'mp4' | 'webm';
+} {
   const candidates: Array<{ mimeType: string; ext: 'mp4' | 'webm' }> = [
+    { mimeType: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4' },
+    { mimeType: 'video/mp4;codecs=avc1.42E01E', ext: 'mp4' },
     { mimeType: 'video/mp4;codecs=avc1', ext: 'mp4' },
     { mimeType: 'video/mp4', ext: 'mp4' },
     { mimeType: 'video/webm;codecs=vp9', ext: 'webm' },
     { mimeType: 'video/webm;codecs=vp8', ext: 'webm' },
     { mimeType: 'video/webm', ext: 'webm' },
   ];
+
   for (const item of candidates) {
     if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(item.mimeType)) {
-      return item;
+      try {
+        const recorder = new MediaRecorder(stream, {
+          mimeType: item.mimeType,
+          videoBitsPerSecond: 6_000_000,
+        });
+        const actualMime = recorder.mimeType || item.mimeType;
+        return {
+          recorder,
+          mimeType: actualMime,
+          ext: actualMime.includes('mp4') ? 'mp4' : item.ext,
+        };
+      } catch {
+        // Continue to next supported browser codec profile
+      }
     }
   }
-  return { mimeType: '', ext: 'webm' };
+
+  const fallbackRecorder = new MediaRecorder(stream);
+  const actualMime = fallbackRecorder.mimeType || 'video/webm';
+  return {
+    recorder: fallbackRecorder,
+    mimeType: actualMime,
+    ext: actualMime.includes('mp4') ? 'mp4' : 'webm',
+  };
 }
 
 export async function renderPhotoMotionClip(
@@ -75,14 +102,9 @@ export async function renderPhotoMotionClip(
 
   const fps = 30;
   const durationMs = Math.max(2, Math.min(6, options.durationSeconds)) * 1000;
-  const chosenMime = pickSupportedRecorderMime();
   const stream = canvas.captureStream(fps);
-  const recorder = chosenMime.mimeType
-    ? new MediaRecorder(stream, {
-        mimeType: chosenMime.mimeType,
-        videoBitsPerSecond: 6_000_000,
-      })
-    : new MediaRecorder(stream);
+  const chosenMime = createSafeMediaRecorder(stream);
+  const recorder = chosenMime.recorder;
 
   const chunks: BlobPart[] = [];
   recorder.ondataavailable = (ev) => {
