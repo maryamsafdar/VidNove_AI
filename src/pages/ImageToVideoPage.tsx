@@ -108,7 +108,7 @@ export function ImageToVideoPage({ onNavigate }: ImageToVideoPageProps) {
                 Uses Lightricks LTX-Video Distilled to synthesize genuine subject movement—such as rippling water, drifting mist, moving vehicles, or wind in fabric—guided by your motion prompt.
               </p>
               <ul className="space-y-2 text-xs text-[#9298A6] pt-2 border-t border-white/[0.08]">
-                <li>· Output: Genuine neural MP4 video (2–4 seconds)</li>
+                <li>· Output: Genuine neural MP4 video (4s, 6s, 8s, or 10s at 24 FPS)</li>
                 <li>· Processing: Transient upload to Hugging Face ZeroGPU</li>
                 <li>· Availability: Subject to shared free community GPU queue</li>
               </ul>
@@ -142,7 +142,7 @@ export function ImageToVideoPage({ onNavigate }: ImageToVideoPageProps) {
                 Applies smooth 30 FPS anamorphic push-in, pull-back, horizon pan, and filmic vignette transitions directly to your photograph using HTML5 Canvas and MediaRecorder.
               </p>
               <ul className="space-y-2 text-xs text-[#9298A6] pt-2 border-t border-white/[0.08]">
-                <li>· Output: Crisp 720p–1280p camera-animated video (3–5 seconds)</li>
+                <li>· Output: Crisp 720p–1280p H.264 MP4 camera animation (4s, 6s, 8s, or 10s at 30 FPS)</li>
                 <li>· Privacy: 100% local in-browser processing (zero server upload)</li>
                 <li>· Availability: Instant, unlimited, works even when GPU queues are full</li>
               </ul>

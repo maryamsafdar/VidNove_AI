@@ -24,7 +24,7 @@ export function TextToVideoPage({ onNavigate }: TextToVideoPageProps) {
               <Film className="w-4 h-4 text-[#D5FF3F]" />
               <span className="text-[#D5FF3F] font-semibold">Creation Mode 01</span>
               <span aria-hidden="true">·</span>
-              <span>Lightricks LTX-Video Distilled (ZeroGPU)</span>
+              <span>Lightricks LTX-2.3 &amp; LTX-Video Distilled (ZeroGPU)</span>
             </div>
 
             <h1 className="text-3xl sm:text-5xl font-display font-bold text-[#F5F3EC] tracking-tight">
@@ -85,7 +85,7 @@ export function TextToVideoPage({ onNavigate }: TextToVideoPageProps) {
             Why Specific Camera &amp; Lighting Prompts Matter
           </h2>
           <p className="text-sm text-[#9298A6] leading-relaxed">
-            Short one-word prompts leave temporal motion ambiguous. Specifying subject action, camera trajectory, and light direction produces cleaner, more coherent 2–4 second shots.
+            Short one-word prompts leave temporal motion ambiguous. Specifying subject action, camera trajectory, and light direction produces cleaner, more coherent 4, 6, 8, and 10 second shots.
           </p>
         </div>
 

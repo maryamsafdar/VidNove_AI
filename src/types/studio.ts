@@ -14,6 +14,12 @@ export type CreationMode = 'text-to-video' | 'image-to-video' | 'photo-motion';
 
 export type AspectRatioOption = '16:9' | '9:16' | '1:1' | '4:3';
 
+export type ClipDurationOption = 4 | 6 | 8 | 10;
+
+export const CLIP_DURATION_OPTIONS: readonly ClipDurationOption[] = [4, 6, 8, 10] as const;
+
+export const DEFAULT_CLIP_DURATION: ClipDurationOption = 4;
+
 export type VisualStyleId =
   | 'anamorphic'
   | 'documentary'
@@ -33,6 +39,7 @@ export interface StudioLaunchPayload {
   prompt?: string;
   style?: VisualStyleId;
   aspectRatio?: AspectRatioOption;
+  duration?: ClipDurationOption;
   preloadSampleImage?: boolean;
 }
 
@@ -78,11 +85,15 @@ export interface GeneratedCreation {
   mode: CreationMode;
   prompt: string;
   videoUrl: string;
+  remoteVideoUrl?: string;
   downloadUrl: string;
   fileExtension: 'mp4' | 'webm';
   width: number;
   height: number;
-  duration: number;
+  duration: ClipDurationOption;
+  verifiedDuration?: number;
+  fps?: number;
+  frameCount?: number;
   aspectRatio: AspectRatioOption;
   style: VisualStyleId;
   seed?: number;

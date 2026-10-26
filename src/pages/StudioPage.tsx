@@ -31,16 +31,24 @@ import {
   generateTextToVideo,
 } from '../services/videoService';
 import { renderPhotoMotionClip } from '../utils/photoMotionRenderer';
-import type {
-  AspectRatioOption,
-  CreationMode,
-  GeneratedCreation,
-  PhotoMotionPreset,
-  ProviderStatus,
-  RoutePath,
-  StudioLaunchPayload,
-  VideoErrorCode,
-  VisualStyleId,
+import {
+  getExpectedLtxFrameCount,
+  getLtx23Dimensions,
+  normalizeClipDuration,
+} from '../utils/videoMetadata';
+import {
+  CLIP_DURATION_OPTIONS,
+  DEFAULT_CLIP_DURATION,
+  type AspectRatioOption,
+  type ClipDurationOption,
+  type CreationMode,
+  type GeneratedCreation,
+  type PhotoMotionPreset,
+  type ProviderStatus,
+  type RoutePath,
+  type StudioLaunchPayload,
+  type VideoErrorCode,
+  type VisualStyleId,
 } from '../types/studio';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -90,7 +98,7 @@ export function StudioPage({
   );
   const [style, setStyle] = useState<VisualStyleId>('anamorphic');
   const [aspectRatio, setAspectRatio] = useState<AspectRatioOption>('16:9');
-  const [duration, setDuration] = useState<number>(4);
+  const [duration, setDuration] = useState<ClipDurationOption>(DEFAULT_CLIP_DURATION);
   const [photoMotionPreset, setPhotoMotionPreset] = useState<PhotoMotionPreset>('slow-push');
   const [useCustomSeed, setUseCustomSeed] = useState<boolean>(false);
   const [customSeed, setCustomSeed] = useState<number>(42);
@@ -120,9 +128,13 @@ export function StudioPage({
 
   const [creations, setCreations] = useState<GeneratedCreation[]>([]);
   const [activeCreationId, setActiveCreationId] = useState<string | null>(null);
+  const [playerError, setPlayerError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const videoPlayerRef = useRef<HTMLVideoElement | null>(null);
+  const monitorSectionRef = useRef<HTMLDivElement | null>(null);
+  const sessionBlobUrlsRef = useRef<Set<string>>(new Set());
 
   const activeCreation =
     creations.find((c) => c.id === activeCreationId) || creations[0] || null;
@@ -136,7 +148,30 @@ export function StudioPage({
 
   useEffect(() => {
     refreshProvider();
+    const blobSet = sessionBlobUrlsRef.current;
+    return () => {
+      blobSet.forEach((blobUrl) => URL.revokeObjectURL(blobUrl));
+      blobSet.clear();
+    };
   }, []);
+
+  // Automatically start video playback (with muted fallback if browser blocks unmuted autoplay after async GPU wait)
+  useEffect(() => {
+    setPlayerError(null);
+    if (!activeCreation || isGenerating) return;
+    const videoEl = videoPlayerRef.current;
+    if (!videoEl) return;
+
+    const startPlayback = async () => {
+      try {
+        await videoEl.play();
+      } catch {
+        videoEl.muted = true;
+        await videoEl.play().catch(() => undefined);
+      }
+    };
+    startPlayback();
+  }, [activeCreation?.id, activeCreation?.videoUrl, isGenerating]);
 
   // Load sample reference image helper
   const handleLoadSampleImage = async () => {
@@ -177,6 +212,7 @@ export function StudioPage({
     if (launchPayload.prompt) setPrompt(launchPayload.prompt);
     if (launchPayload.style) setStyle(launchPayload.style);
     if (launchPayload.aspectRatio) setAspectRatio(launchPayload.aspectRatio);
+    if (launchPayload.duration) setDuration(normalizeClipDuration(launchPayload.duration));
     if (launchPayload.preloadSampleImage) {
       handleLoadSampleImage();
     }
@@ -253,6 +289,7 @@ export function StudioPage({
 
   const handleGenerate = async () => {
     setErrorBanner(null);
+    setPlayerError(null);
 
     if (mode === 'text-to-video') {
       if (prompt.trim().length < 4) {
@@ -291,11 +328,13 @@ export function StudioPage({
 
     try {
       if (mode === 'photo-motion' && uploadedImage) {
-        setStageMessage('Rendering 30 FPS Photo Motion camera animation locally in browser...');
+        setStageMessage(
+          `Encoding ${duration}s (${duration * 30} unique frames @ 30 FPS) H.264 MP4 camera animation locally...`
+        );
         const motionOut = await renderPhotoMotionClip({
           imageDataUrl: uploadedImage.dataUrl,
           aspectRatio,
-          durationSeconds: Math.max(3, duration),
+          durationSeconds: duration,
           preset: photoMotionPreset,
           captionHint: prompt,
           onProgress: (frac) => setPhotoMotionProgress(Math.round(frac * 100)),
@@ -315,6 +354,9 @@ export function StudioPage({
           width: motionOut.width,
           height: motionOut.height,
           duration: motionOut.duration,
+          verifiedDuration: motionOut.verifiedDuration,
+          fps: motionOut.fps,
+          frameCount: motionOut.frameCount,
           aspectRatio,
           style,
           modelLabel: 'Photo Animation · Browser Canvas (Not Generative AI)',
@@ -322,8 +364,12 @@ export function StudioPage({
           createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           elapsedSeconds: totalSec,
         };
+        if (motionOut.videoUrl.startsWith('blob:')) {
+          sessionBlobUrlsRef.current.add(motionOut.videoUrl);
+        }
         setCreations((prev) => [newCreation, ...prev]);
         setActiveCreationId(newCreation.id);
+        monitorSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       } else if (mode === 'text-to-video') {
         const res = await generateTextToVideo({
           prompt,
@@ -345,17 +391,24 @@ export function StudioPage({
             externalDemoUrl: res.externalDemoUrl,
           });
         } else {
+          if (res.videoUrl.startsWith('blob:')) {
+            sessionBlobUrlsRef.current.add(res.videoUrl);
+          }
           const totalSec = Math.max(1, Math.round((performance.now() - startedAt) / 1000));
           const newCreation: GeneratedCreation = {
             id: `t2v-${Date.now()}`,
             mode: 'text-to-video',
             prompt,
             videoUrl: res.videoUrl,
+            remoteVideoUrl: res.remoteVideoUrl,
             downloadUrl: res.downloadUrl,
             fileExtension: 'mp4',
             width: res.width,
             height: res.height,
             duration: res.duration,
+            verifiedDuration: res.verifiedDuration,
+            fps: res.fps,
+            frameCount: res.frameCount,
             aspectRatio,
             style,
             seed: res.seed,
@@ -367,6 +420,7 @@ export function StudioPage({
           };
           setCreations((prev) => [newCreation, ...prev]);
           setActiveCreationId(newCreation.id);
+          monitorSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       } else if (mode === 'image-to-video' && uploadedImage) {
         const res = await generateImageToVideo({
@@ -395,17 +449,24 @@ export function StudioPage({
             externalDemoUrl: res.externalDemoUrl,
           });
         } else {
+          if (res.videoUrl.startsWith('blob:')) {
+            sessionBlobUrlsRef.current.add(res.videoUrl);
+          }
           const totalSec = Math.max(1, Math.round((performance.now() - startedAt) / 1000));
           const newCreation: GeneratedCreation = {
             id: `i2v-${Date.now()}`,
             mode: 'image-to-video',
             prompt: prompt.trim() || `Animated ${uploadedImage.fileName}`,
             videoUrl: res.videoUrl,
+            remoteVideoUrl: res.remoteVideoUrl,
             downloadUrl: res.downloadUrl,
             fileExtension: 'mp4',
             width: res.width,
             height: res.height,
             duration: res.duration,
+            verifiedDuration: res.verifiedDuration,
+            fps: res.fps,
+            frameCount: res.frameCount,
             aspectRatio,
             style,
             seed: res.seed,
@@ -417,6 +478,7 @@ export function StudioPage({
           };
           setCreations((prev) => [newCreation, ...prev]);
           setActiveCreationId(newCreation.id);
+          monitorSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       }
     } catch (err) {
@@ -501,8 +563,8 @@ export function StudioPage({
             Engine:{' '}
             <strong className="text-[#F5F3EC]">
               {mode === 'photo-motion'
-                ? 'Browser Photo Animation (Local Canvas — Not Generative AI)'
-                : providerStatus?.model || 'Lightricks/LTX-Video + AnimateDiff-Lightning'}
+                ? 'Browser Photo Animation (Local Canvas MP4 — Not Generative AI)'
+                : providerStatus?.model || 'Lightricks/LTX-2.3 Distilled (4s–10s · 24 FPS)'}
             </strong>
           </span>
           <span aria-hidden="true">·</span>
@@ -587,7 +649,6 @@ export function StudioPage({
                 aria-selected={mode === 'photo-motion'}
                 onClick={() => {
                   setMode('photo-motion');
-                  if (duration < 3) setDuration(4);
                   setErrorBanner(null);
                 }}
                 className={`py-2.5 px-2 rounded-xl min-[375px]:rounded-full text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap truncate cursor-pointer ${
@@ -895,59 +956,104 @@ export function StudioPage({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <span className="block text-xs font-semibold text-[#F5F3EC] mb-1.5">
-                  Clip Duration
-                </span>
-                <div className="inline-flex items-center gap-1 p-1 rounded-full bg-[#0B0D12] border border-white/10">
-                  {(mode === 'photo-motion' ? [3, 4, 5] : [2, 3, 4]).map((sec) => (
-                    <button
-                      key={sec}
-                      type="button"
-                      onClick={() => setDuration(sec)}
-                      className={`px-3.5 py-1 rounded-full text-xs font-mono tabular-nums font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                        duration === sec
-                          ? 'bg-[#D5FF3F] text-[#0B0D12] font-semibold'
-                          : 'text-[#9298A6] hover:text-[#F5F3EC]'
-                      }`}
-                    >
-                      {sec}s
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {mode !== 'photo-motion' && (
-                <div>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="w-full sm:w-auto">
                   <span className="block text-xs font-semibold text-[#F5F3EC] mb-1.5">
-                    Seed Control
+                    Clip Duration
                   </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setUseCustomSeed((v) => !v)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                        useCustomSeed
-                          ? 'bg-[#0B0D12] border-[#D5FF3F] text-[#D5FF3F]'
-                          : 'bg-[#0B0D12] border-white/10 text-[#9298A6]'
-                      }`}
-                    >
-                      {useCustomSeed ? 'Fixed' : 'Random'}
-                    </button>
-                    {useCustomSeed && (
-                      <input
-                        type="number"
-                        min={0}
-                        max={2147483647}
-                        value={customSeed}
-                        onChange={(e) => setCustomSeed(Math.max(0, Number(e.target.value) || 0))}
-                        aria-label="Custom generation seed"
-                        className="w-24 rounded-lg bg-[#0B0D12] border border-white/15 px-2.5 py-1 text-xs font-mono tabular-nums text-[#F5F3EC]"
-                      />
-                    )}
+                  <div
+                    role="radiogroup"
+                    aria-label="Clip duration in seconds"
+                    className="grid grid-cols-4 sm:inline-flex items-center gap-1 p-1 rounded-full bg-[#0B0D12] border border-white/10 w-full sm:w-auto"
+                  >
+                    {CLIP_DURATION_OPTIONS.map((sec) => {
+                      const selected = duration === sec;
+                      return (
+                        <button
+                          key={sec}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => setDuration(sec)}
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-mono tabular-nums font-medium transition-colors whitespace-nowrap shrink-0 text-center cursor-pointer ${
+                            selected
+                              ? 'bg-[#D5FF3F] text-[#0B0D12] font-semibold'
+                              : 'text-[#9298A6] hover:text-[#F5F3EC]'
+                          }`}
+                        >
+                          {sec}s
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
+
+                {mode !== 'photo-motion' && (
+                  <div>
+                    <span className="block text-xs font-semibold text-[#F5F3EC] mb-1.5">
+                      Seed Control
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setUseCustomSeed((v) => !v)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                          useCustomSeed
+                            ? 'bg-[#0B0D12] border-[#D5FF3F] text-[#D5FF3F]'
+                            : 'bg-[#0B0D12] border-white/10 text-[#9298A6]'
+                        }`}
+                      >
+                        {useCustomSeed ? 'Fixed' : 'Random'}
+                      </button>
+                      {useCustomSeed && (
+                        <input
+                          type="number"
+                          min={0}
+                          max={2147483647}
+                          value={customSeed}
+                          onChange={(e) =>
+                            setCustomSeed(
+                              Math.min(2147483647, Math.max(0, Number(e.target.value) || 0))
+                            )
+                          }
+                          aria-label="Custom generation seed"
+                          className="w-24 rounded-lg bg-[#0B0D12] border border-white/15 px-2.5 py-1 text-xs font-mono tabular-nums text-[#F5F3EC]"
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] font-mono tabular-nums text-[#9298A6]">
+                {mode === 'photo-motion' ? (
+                  <>
+                    Output spec: {duration * 30} unique frames @ 30 FPS · {duration}.0s H.264 MP4
+                  </>
+                ) : (
+                  <>
+                    Target spec: {getExpectedLtxFrameCount(duration, 24)} frames @ 24 FPS ·{' '}
+                    {getLtx23Dimensions(
+                      aspectRatio,
+                      duration,
+                      Boolean(providerStatus?.authenticatedQuota)
+                    ).width}
+                    ×
+                    {getLtx23Dimensions(
+                      aspectRatio,
+                      duration,
+                      Boolean(providerStatus?.authenticatedQuota)
+                    ).height}{' '}
+                    ({duration}s MP4)
+                  </>
+                )}
+              </p>
+
+              {mode !== 'photo-motion' && (
+                <p className="text-[11px] text-[#9298A6] leading-relaxed">
+                  Model duration support: <strong className="text-[#F5F3EC]">LTX-2.3</strong> natively renders 4s, 6s, 8s &amp; 10s. If free ZeroGPU queues fall back during peak load, clips automatically adjust to that backup model’s real frame cap (8s max on LTX-Distilled, 6s on Zeroscope-v2, ~3.4s on Wan 2.1, or 1.6s on AnimateDiff-Lightning) without breaking generation or looping frames.
+                </p>
               )}
             </div>
           </div>
@@ -982,8 +1088,8 @@ export function StudioPage({
 
             <p className="text-[11px] text-[#9298A6] leading-relaxed text-center">
               {mode === 'photo-motion'
-                ? '100% free local browser photo animation (not generative AI) · Zero external servers or GPU quotas.'
-                : 'Rs. 0 Free Community Quota · Powered by Lightricks LTX-Video Distilled + ByteDance AnimateDiff-Lightning on Hugging Face GPU.'}
+                ? '100% free local browser photo animation (not generative AI) · Frame-accurate H.264 MP4 export with zero external upload.'
+                : 'Rs. 0 Free Community Quota · Powered by Lightricks LTX-2.3 & LTX-Video Distilled (4s, 6s, 8s, 10s @ 24 FPS) on Hugging Face ZeroGPU.'}
             </p>
           </div>
         </div>
@@ -1035,41 +1141,57 @@ export function StudioPage({
                 </div>
               </div>
 
-              {errorBanner.unavailable && (
-                <div className="pt-2 flex flex-wrap items-center gap-3 pl-8">
-                  {errorBanner.externalDemoUrl && (
-                    <a
-                      href={errorBanner.externalDemoUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#0B0D12] border border-white/15 text-xs font-medium text-[#F5F3EC] hover:border-[#D5FF3F] transition-colors whitespace-nowrap shrink-0"
-                    >
-                      <span>Open Official LTX-Video Space (External Free Demo)</span>
-                      <ExternalLink className="w-3.5 h-3.5 text-[#D5FF3F]" />
-                    </a>
-                  )}
+              <div className="pt-2 flex flex-wrap items-center gap-3 pl-8">
+                <button
+                  type="button"
+                  onClick={handleGenerate}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#D5FF3F] text-[#0B0D12] text-xs font-semibold hover:bg-[#E2FF70] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Generation</span>
+                </button>
 
-                  {uploadedImage && mode === 'image-to-video' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode('photo-motion');
-                        setDuration(4);
-                        setErrorBanner(null);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#D5FF3F] text-[#0B0D12] text-xs font-semibold hover:bg-[#E2FF70] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                    >
-                      <span>Switch to 4s Browser Photo Animation (Non-AI)</span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              )}
+                {errorBanner.unavailable && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!uploadedImage) {
+                        await handleLoadSampleImage();
+                      }
+                      setMode('photo-motion');
+                      setErrorBanner(null);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#0B0D12] border border-white/20 text-xs font-semibold text-[#F5F3EC] hover:border-[#D5FF3F] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <span>
+                      {uploadedImage
+                        ? `Switch to ${duration}s Browser Photo Animation (Non-AI)`
+                        : `Try Instant ${duration}s Browser Photo Animation (Sample Frame)`}
+                    </span>
+                    <ArrowUpRight className="w-3.5 h-3.5 text-[#D5FF3F]" />
+                  </button>
+                )}
+
+                {errorBanner.externalDemoUrl && (
+                  <a
+                    href={errorBanner.externalDemoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#0B0D12] border border-white/15 text-xs font-medium text-[#9298A6] hover:text-[#F5F3EC] hover:border-white/35 transition-colors whitespace-nowrap shrink-0"
+                  >
+                    <span>Open Official LTX-2.3 Space</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-[#D5FF3F]" />
+                  </a>
+                )}
+              </div>
             </div>
           )}
 
           {/* Main Cinema Monitor */}
-          <div className="rounded-2xl border border-white/[0.09] bg-[#151820] overflow-hidden">
+          <div
+            ref={monitorSectionRef}
+            className="rounded-2xl border border-white/[0.09] bg-[#151820] overflow-hidden"
+          >
             {/* Monitor Top Bar */}
             <div className="px-5 py-3.5 border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-3 text-xs text-[#9298A6]">
               <div className="flex items-center gap-2">
@@ -1079,9 +1201,7 @@ export function StudioPage({
               <div className="flex items-center gap-2 font-mono tabular-nums">
                 <span>Frame {aspectRatio}</span>
                 <span aria-hidden="true">·</span>
-                <span>
-                  {ASPECT_RATIO_CONFIGS.find((a) => a.id === aspectRatio)?.resolution}
-                </span>
+                <span>{duration}s Target</span>
               </div>
             </div>
 
@@ -1108,21 +1228,132 @@ export function StudioPage({
                     </div>
                   ) : (
                     <p className="text-xs text-[#9298A6] leading-relaxed">
-                      Waiting on real Hugging Face ZeroGPU execution. Shared community queues typically complete in 12–35 seconds without artificial progress estimates.
+                      Waiting on real Hugging Face ZeroGPU execution. Shared community queues typically complete in 12–45 seconds without artificial progress estimates.
                     </p>
                   )}
                 </div>
               ) : activeCreation ? (
-                <div className="w-full flex flex-col items-center justify-center">
-                  <video
-                    key={activeCreation.videoUrl}
-                    src={activeCreation.videoUrl}
-                    controls
-                    autoPlay
-                    loop
-                    playsInline
-                    className="max-h-[460px] w-auto max-w-full rounded-xl border border-white/10 bg-black"
-                  />
+                playerError ? (
+                  <div className="max-w-md w-full rounded-xl border border-[#FF6B65]/40 bg-[#151820] p-6 text-center space-y-4">
+                    <AlertTriangle className="w-8 h-8 text-[#FF6B65] mx-auto" />
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-semibold text-[#F5F3EC]">
+                        Video Playback Stream Interrupted
+                      </p>
+                      <p className="text-xs text-[#9298A6] leading-relaxed">{playerError}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadCreation(activeCreation)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#D5FF3F] text-[#0B0D12] text-xs font-semibold hover:bg-[#E2FF70] transition-colors cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download MP4 Directly</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleGenerate}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-white/15 bg-[#0B0D12] text-xs font-semibold text-[#F5F3EC] hover:border-white/35 transition-colors cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Generate Fresh Take</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full flex flex-col items-center justify-center">
+                    <video
+                      ref={videoPlayerRef}
+                      key={activeCreation.videoUrl}
+                      src={activeCreation.videoUrl}
+                      controls
+                      autoPlay
+                      loop
+                      playsInline
+                      preload="auto"
+                      onLoadedMetadata={(e) => {
+                        setPlayerError(null);
+                        const actualDur = e.currentTarget.duration;
+                        if (Number.isFinite(actualDur) && actualDur > 0) {
+                          const rounded = Number(actualDur.toFixed(2));
+                          setCreations((prev) =>
+                            prev.map((item) =>
+                              item.id === activeCreation.id && item.verifiedDuration !== rounded
+                                ? { ...item, verifiedDuration: rounded }
+                                : item
+                            )
+                          );
+                        }
+                      }}
+                      onError={() => {
+                        const fallbackProxy =
+                          activeCreation.remoteVideoUrl &&
+                          activeCreation.remoteVideoUrl.startsWith('https://')
+                            ? `/api/video/download?url=${encodeURIComponent(
+                                activeCreation.remoteVideoUrl
+                              )}&inline=1`
+                            : null;
+
+                        if (fallbackProxy && activeCreation.videoUrl !== fallbackProxy) {
+                          setCreations((prev) =>
+                            prev.map((item) =>
+                              item.id === activeCreation.id
+                                ? { ...item, videoUrl: fallbackProxy }
+                                : item
+                            )
+                          );
+                          return;
+                        }
+
+                        setPlayerError(
+                          'This browser could not decode the active video stream directly. You can download the verified MP4 file below or generate a new take.'
+                        );
+                      }}
+                      className="w-full max-h-[460px] object-contain rounded-xl border border-white/10 bg-black"
+                    />
+                  </div>
+                )
+              ) : errorBanner ? (
+                /* Explicit Failure State Inside Cinema Monitor (Never Blank!) */
+                <div className="max-w-lg w-full text-center space-y-4 py-8 px-4">
+                  <div className="mx-auto w-14 h-14 rounded-2xl border border-[#FF6B65]/40 bg-[#151820] flex items-center justify-center">
+                    <AlertTriangle className="w-7 h-7 text-[#FF6B65]" />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-lg sm:text-xl font-display font-bold text-[#F5F3EC]">
+                      {errorBanner.errorCode === 'QUOTA_EXHAUSTED'
+                        ? 'Free Community GPU Quota Temporarily Full'
+                        : 'Video Generation Could Not Complete'}
+                    </h2>
+                    <p className="text-sm text-[#9298A6] leading-relaxed">
+                      {errorBanner.message}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleGenerate}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#D5FF3F] text-[#0B0D12] text-xs font-semibold hover:bg-[#E2FF70] transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Retry Generation</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!uploadedImage) {
+                          await handleLoadSampleImage();
+                        }
+                        setMode('photo-motion');
+                        setErrorBanner(null);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full border border-white/20 bg-[#151820] text-xs font-semibold text-[#F5F3EC] hover:border-[#D5FF3F] transition-colors cursor-pointer"
+                    >
+                      <span>Render {duration}s Browser Photo Animation Instead</span>
+                      <ArrowUpRight className="w-3.5 h-3.5 text-[#D5FF3F]" />
+                    </button>
+                  </div>
                 </div>
               ) : (
                 /* Elegant Empty State */
@@ -1142,16 +1373,16 @@ export function StudioPage({
                     </h2>
                     <p className="text-sm text-[#9298A6] leading-relaxed">
                       {mode === 'text-to-video'
-                        ? 'Enter a scene description on the left—or click any starter prompt—then press Generate AI Text-to-Video to synthesize a real clip on ZeroGPU.'
+                        ? 'Enter a scene description on the left—or click any starter prompt—then choose 4s, 6s, 8s, or 10s and press Generate AI Text-to-Video.'
                         : mode === 'image-to-video'
-                        ? 'Upload a JPG, PNG, or WebP frame (or load the sample watch image), confirm upload consent, and generate real motion.'
-                        : 'Upload any still photograph or load our sample frame to render a smooth 30 FPS Photo Motion clip directly in your browser.'}
+                        ? 'Upload a JPG, PNG, or WebP frame (or load the sample watch image), select 4s, 6s, 8s, or 10s, and generate real motion.'
+                        : 'Upload any still photograph or load our sample frame to render a frame-accurate 4s, 6s, 8s, or 10s 30 FPS MP4 clip directly in your browser.'}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-[#9298A6]">
                     <span>No watermarks added</span>
                     <span aria-hidden="true">·</span>
-                    <span>Genuine video output only</span>
+                    <span>Verified 4s / 6s / 8s / 10s MP4 output</span>
                   </div>
                 </div>
               )}
@@ -1176,7 +1407,20 @@ export function StudioPage({
                       {activeCreation.width}×{activeCreation.height}
                     </span>
                     <span aria-hidden="true">·</span>
-                    <span className="font-mono tabular-nums">{activeCreation.duration}s</span>
+                    <span className="font-mono tabular-nums text-[#F5F3EC]">
+                      {typeof activeCreation.verifiedDuration === 'number'
+                        ? `${activeCreation.verifiedDuration}s output (${activeCreation.duration}s requested)`
+                        : `${activeCreation.duration}s`}
+                    </span>
+                    {typeof activeCreation.frameCount === 'number' &&
+                      typeof activeCreation.fps === 'number' && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-mono tabular-nums">
+                            {activeCreation.frameCount}f @ {activeCreation.fps}fps
+                          </span>
+                        </>
+                      )}
                     {typeof activeCreation.seed === 'number' && (
                       <>
                         <span aria-hidden="true">·</span>
@@ -1190,25 +1434,45 @@ export function StudioPage({
                     {activeCreation.prompt}
                   </p>
                   {activeCreation.fallbackNotice && (
-                    <p className="text-[11px] text-[#9298A6] leading-relaxed pt-0.5">
-                      {activeCreation.fallbackNotice}
+                    <p className="text-[11px] text-[#FF6B65] leading-relaxed pt-0.5">
+                      Note: {activeCreation.fallbackNotice}
                     </p>
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  disabled={downloadingId === activeCreation.id}
-                  onClick={() => handleDownloadCreation(activeCreation)}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#D5FF3F] text-[#0B0D12] text-xs sm:text-sm font-semibold hover:bg-[#E2FF70] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  <Download className="w-4 h-4 shrink-0" />
-                  <span>
-                    {downloadingId === activeCreation.id
-                      ? 'Saving...'
-                      : `Download ${activeCreation.fileExtension.toUpperCase()}`}
-                  </span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = videoPlayerRef.current;
+                      if (el) {
+                        el.currentTime = 0;
+                        el.play().catch(() => {
+                          el.muted = true;
+                          el.play().catch(() => undefined);
+                        });
+                      }
+                    }}
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full border border-white/15 bg-[#0B0D12] text-[#F5F3EC] text-xs sm:text-sm font-semibold hover:border-[#D5FF3F] transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current text-[#D5FF3F] shrink-0" />
+                    <span>Replay</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={downloadingId === activeCreation.id}
+                    onClick={() => handleDownloadCreation(activeCreation)}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#D5FF3F] text-[#0B0D12] text-xs sm:text-sm font-semibold hover:bg-[#E2FF70] disabled:opacity-60 transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    <Download className="w-4 h-4 shrink-0" />
+                    <span>
+                      {downloadingId === activeCreation.id
+                        ? 'Saving...'
+                        : `Download ${activeCreation.fileExtension.toUpperCase()}`}
+                    </span>
+                  </button>
+                </div>
               </div>
             )}
           </div>

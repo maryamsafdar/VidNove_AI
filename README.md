@@ -1,13 +1,17 @@
 # VidNova AI — Turn Your Imagination Into Motion
 
-**VidNova AI** is a zero-cost, open-architecture AI video generation and cinematography studio built with **React 19, TypeScript, Vite, Tailwind CSS, and Express**.
+**VidNova AI** is a zero-cost, open-architecture AI video generation and cinematography studio built with **React 19, TypeScript, Vite, Tailwind CSS, Express, and Vercel Serverless Functions**.
 
 ## Core Capabilities
 
 1. **Real Open-Weight Text-to-Video & Image-to-Video (Rs. 0 / $0.00)**
-   - Connects to the official **`Lightricks/ltx-video-distilled`** Diffusion Transformer (DiT) pipeline running on **Hugging Face ZeroGPU**.
-   - Supports `16:9`, `9:16`, `1:1`, and `4:3` frame geometries, 6 optical cinematography styles, seed control, native `<video>` preview, and 1-click MP4 downloads.
-   - **Strict Honesty**: Never displays fake progress bars or pre-recorded clips. If shared free Hugging Face ZeroGPU capacity is temporarily exhausted, the Studio displays an explicit status notice and links transparently to the official Hugging Face Space.
+   - Primary engine: **`Lightricks/LTX-2.3 22B Distilled`** (`4s, 6s, 8s, 10s` @ 24 FPS: `97, 145, 193, 241` frames) on **Hugging Face ZeroGPU**.
+   - Resilient duration-clamped fallbacks so unsupported durations on backup models never break generation:
+     - **`Lightricks/ltx-video-distilled`** (`4s, 6s, 8s` @ 24 FPS; `10s` auto-caps to `8.0s` max model limit with clear UI notice).
+     - **`Zeroscope-v2`** (`4s, 6s` @ 8 FPS widescreen; `8s/10s` auto-caps to `6.0s` / 48-frame limit with clear UI notice).
+     - **`Wan 2.1 14B Fast`** (Image-to-Video fallback, `81 frames @ 24 FPS ≈ 3.38s` with clear UI notice).
+     - **`ByteDance/AnimateDiff-Lightning`** (Text-to-Video short-clip fallback, `16 frames @ 10 FPS = 1.6s` with clear UI notice).
+   - Verifies binary MP4 container headers (`ftyp`/`moov`/`mdat`) and `mvhd`/`hdlr` track durations, hydrates clips into local browser `Blob` streams for reliable instant playback and 1-click MP4 downloads, and never fakes videos or duplicates/loops frames.
 
 2. **Bilingual Local AI Prompt Assistant (English & Roman Urdu)**
    - Runs 100% offline in the browser with **zero paid LLM APIs**.
@@ -15,23 +19,11 @@
 
 3. **Photo Motion — Local Browser Camera Animation (Non-Generative)**
    - Explicitly labeled **Photo Motion** (never misrepresented as generative AI).
-   - Animates validated `JPG`, `PNG`, and `WebP` photographs (up to 8 MB) locally at 30 FPS using HTML5 Canvas and `MediaRecorder` with zero cloud upload and zero GPU queue wait.
+   - Animates validated `JPG`, `PNG`, and `WebP` photographs (up to 8 MB) locally into frame-accurate `4s, 6s, 8s, or 10s` (`120, 180, 240, or 300` unique frames @ 30 FPS) H.264 `.mp4` videos using HTML5 Canvas, WebCodecs `VideoEncoder`, and `mp4-muxer` (with `MediaRecorder` fallback)—zero cloud upload and zero GPU queue wait.
 
 4. **Complete Multi-Page Website & SEO**
    - Pages: `/`, `/studio`, `/explore`, `/text-to-video`, `/image-to-video`, `/how-it-works`, `/faq`, `/contact`, `/privacy`, `/terms`.
    - Dynamic `<title>`, meta descriptions, OpenGraph/Twitter cards, canonical URLs, `WebApplication` / `FAQPage` / `HowTo` Schema.org JSON-LD, `robots.txt`, and `sitemap.xml`.
-
----
-
-## Color System & Typography
-
-- **Midnight Graphite**: `#0B0D12` (Primary neutral canvas)
-- **Deep Obsidian**: `#151820` (Elevated studio panels & surfaces)
-- **Electric Acid Lime**: `#D5FF3F` (High-contrast primary actions & active states)
-- **Sunset Coral**: `#FF6B65` (Editorial highlights & alert accents)
-- **Soft Ivory**: `#F5F3EC` (Primary typography)
-- **Muted Steel**: `#9298A6` (Secondary body copy & unboxed metadata)
-- **Typography**: `Bricolage Grotesque` (Display) + `Plus Jakarta Sans` (Body) + `JetBrains Mono` (Tabular metrics)
 
 ---
 
@@ -44,19 +36,18 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-### Zero-Token Default Operation
+### Zero-Token Default & Optional Server-Side `HF_TOKEN`
 
-No API keys or tokens are required to run the website, homepage, Prompt Assistant, Image Upload, or Photo Motion studio. `.env.example` intentionally omits `HF_TOKEN` so Google AI Studio never prompts for a secret. If deploying your own Node/Express server, you may optionally set a free read-only `hf_...` token in your private server environment (`HF_TOKEN`) for higher ZeroGPU queue priority—never in client-side code.
+- **Frontend / Google AI Studio**: Zero tokens or secrets are required. `.env.example` intentionally omits an active `HF_TOKEN` assignment so Google AI Studio never prompts for a secret, and no token is ever included in client-side `VITE_*` code.
+- **Vercel / Self-Hosted Server (Optional, $0 Free Account)**: VidNova AI includes `/api/video/*` Vercel Serverless Functions (`api/video/status.ts`, `text-to-video.ts`, `image-to-video.ts`, `download.ts`). Adding an optional free read-only Hugging Face token (`hf_...` from `huggingface.co/settings/tokens`) as `HF_TOKEN` in **Vercel Project Settings → Environment Variables** unlocks authenticated server-side ZeroGPU priority without exposing your token to browsers.
 
 ---
 
 ## Syncing to GitHub (`maryamsafdar/VidNove_AI`) & Vercel Hobby Deployment
 
 1. **Sync Updates from Google AI Studio to GitHub**:
-   - Click the **GitHub** icon (**Sync / Export to GitHub**) in the top toolbar of Google AI Studio.
-   - Select your connected repository **`maryamsafdar/VidNove_AI`** and branch **`main`**, enter a commit message, and confirm to push all updated files (`package.json`, `package-lock.json`, `vercel.json`, `server.ts`, and `src/*`).
-2. **Verify Vercel Builds the Latest Commit (`main`)**:
-   - Pushing a new commit to `maryamsafdar/VidNove_AI` (`main`) automatically triggers a fresh Vercel production deployment.
-   - In the Vercel Dashboard (**Deployments** tab), always open the **newest** deployment at the top of the list rather than clicking **Redeploy** on an older failed deployment (such as `c6663d5`), because redeploying an old card rebuilds that historical commit snapshot.
-   - `vercel.json` configures `npm install`, `npm run build`, output directory `dist`, and clean SPA route rewrites on the free Hobby plan.
-
+   - After reviewing the changes in Preview, click the **GitHub** icon (**Sync / Export to GitHub**) in the top toolbar of Google AI Studio.
+   - Select your connected repository **`maryamsafdar/VidNove_AI`** and branch **`main`**, enter a commit message, and confirm.
+2. **Verify Vercel Deployment (`main`)**:
+   - `vercel.json` configures `npm install`, `npm run build`, `dist` output directory, `api/**/*.ts` serverless functions (`maxDuration: 60`), and clean SPA rewrites that preserve `/api/*`.
+   - Optional (recommended for reliable ZeroGPU quota on shared networks): In Vercel → **Settings** → **Environment Variables**, add `HF_TOKEN` = `hf_...` (free Hugging Face Read token, server-side only) and redeploy the latest `main` commit.

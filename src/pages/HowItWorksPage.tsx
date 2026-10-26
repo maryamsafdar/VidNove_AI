@@ -83,7 +83,7 @@ export function HowItWorksPage({ onNavigate }: HowItWorksPageProps) {
             <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1">
               <span className="text-[#9298A6]">Generative Video Model</span>
               <span className="font-medium text-[#F5F3EC]">
-                Lightricks / LTX-Video Distilled (DiT Architecture)
+                Lightricks LTX-2.3 &amp; LTX-Video Distilled (4s–10s · 24 FPS DiT)
               </span>
             </div>
             <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1">
@@ -107,7 +107,7 @@ export function HowItWorksPage({ onNavigate }: HowItWorksPageProps) {
             <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1">
               <span className="text-[#9298A6]">Photo Motion Renderer</span>
               <span className="font-medium text-[#F5F3EC]">
-                HTML5 2D Canvas + Browser MediaRecorder (30 FPS)
+                HTML5 Canvas + WebCodecs H.264 MP4 Muxer (4s–10s @ 30 FPS)
               </span>
             </div>
           </div>

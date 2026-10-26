@@ -514,7 +514,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
                   Text to Video (ZeroGPU)
                 </p>
                 <p className="text-xs text-[#9298A6] mt-1 leading-relaxed">
-                  Real 2–4 second MP4 video synthesis powered by Lightricks LTX-Video Distilled when free Hugging Face ZeroGPU queue slots are open.
+                  Real 4, 6, 8, and 10 second MP4 video synthesis powered by Lightricks LTX-2.3 &amp; LTX-Video Distilled when free Hugging Face ZeroGPU queue slots are open.
                 </p>
               </div>
               <div>
@@ -572,7 +572,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
               <ul className="space-y-3 text-xs text-[#9298A6] leading-relaxed">
                 <li className="pb-3 border-b border-white/[0.06]">
                   <strong className="text-[#F5F3EC]">4K / 60-Second Clips (Unavailable):</strong>{' '}
-                  Free community ZeroGPU slices cap single-pass generation to compact resolutions (up to 768px) and 2–4 second clips.
+                  Free community ZeroGPU slices cap single-pass generation to compact resolutions (up to 768px) and 4–10 second clips.
                 </li>
                 <li className="pb-3 border-b border-white/[0.06]">
                   <strong className="text-[#F5F3EC]">Synchronized AI Foley Audio (Planned):</strong>{' '}
